@@ -1,26 +1,231 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   CROCHET STUDIO — DESIGN TOKENS
+   --------------------------------------------------------------------------
+   Everything visual in the app comes from this file. Components never hardcode
+   a hex value; they use semantic names like `bg-surface` or `text-ink-muted`.
+
+   WHY TOKENS INSTEAD OF UTILITY CLASSES EVERYWHERE
+   ------------------------------------------------
+   - Dark mode becomes a single class on <html> instead of dozens of dark: variants
+   - A colour can be re-tuned in one place for the whole product
+   - Semantic names outlive a redesign: `ink-muted` still means "secondary text"
+     even if the neutral palette changes completely
+
+   The palette is deliberately NEUTRAL GREY. A monochrome scheme is unusually
+   forgiving for a tool that has to be read at a glance: the colour budget goes
+   entirely to *meaning* (accent = action, success = done, danger = broken)
+   instead of decoration. Warm neutrals (clay, sand, moss) live in the user
+   content — yarn colourways, project swatches — not in the chrome.
+
+   Greys are cool-neutral (a hair of blue in the shadows) because pure neutral
+   grey reads as flat and slightly lifeless on large surfaces.
+   ========================================================================== */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Surfaces ------------------------------------------------------------- */
+  --canvas: #f4f4f5; /* page background */
+  --surface: #ffffff; /* cards, panels */
+  --surface-2: #fafafa; /* subtle inset areas, table stripes */
+  --surface-3: #eeeeef; /* hover states on neutral surfaces */
+
+  /* Lines ---------------------------------------------------------------- */
+  --line: #e4e4e7;
+  --line-strong: #d3d3d8;
+
+  /* Text ----------------------------------------------------------------- */
+  --ink: #18181b;
+  --ink-muted: #6b6b73;
+  --ink-subtle: #a0a0a8;
+  --ink-inverse: #fafafa;
+
+  /* Accent (graphite) ---------------------------------------------------- */
+  /* `--accent` is the interactive colour: primary buttons, active nav, focus.
+     `--on-accent` exists because a light button in dark mode needs DARK text.
+     Without it, a white-on-white button would appear in dark mode. */
+  --accent: #27272a;
+  --accent-hover: #3f3f46;
+  --accent-soft: #ececee;
+  --on-accent: #ffffff;
+
+  --moss: #4b5563;
+  --moss-soft: #eceef1;
+
+  --dusk: #5b6b7a;
+  --dusk-soft: #edf0f3;
+
+  /* Semantic ------------------------------------------------------------- */
+  /* Kept slightly distinguishable so status is never ambiguous, but muted
+     enough that the interface still reads as monochrome. Colour is never the
+     only signal — every status also carries a text label. */
+  --success: #3f7a54;
+  --success-soft: #e6efe8;
+  --warning: #8a6d1f;
+  --warning-soft: #f4efe0;
+  --danger: #b04a3e;
+  --danger-soft: #f7e8e6;
+  /* Background variant of danger, for filled buttons. Kept separate from
+     `--danger` (a text colour) because the two need different lightness to hit
+     4.5:1 against white label text. */
+  --danger-solid: #b04a3e;
+
+  /* Shape & depth -------------------------------------------------------- */
+  --radius-sm: 0.5rem;
+  --radius: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+
+  --shadow-soft: 0 1px 2px rgb(24 24 27 / 0.04), 0 4px 12px rgb(24 24 27 / 0.05);
+  --shadow-lift: 0 2px 4px rgb(24 24 27 / 0.06), 0 12px 28px rgb(24 24 27 / 0.09);
+
+  --ring: #52525b;
 }
 
+.dark {
+  --canvas: #131314;
+  --surface: #1a1a1c;
+  --surface-2: #202024;
+  --surface-3: #29292e;
+
+  --line: #2c2c31;
+  --line-strong: #3f3f46;
+
+  --ink: #ededf0;
+  --ink-muted: #a1a1aa;
+  --ink-subtle: #71717a;
+  --ink-inverse: #131314;
+
+  --accent: #e4e4e7;
+  --accent-hover: #f4f4f5;
+  --accent-soft: #2a2a2f;
+  --on-accent: #131314;
+
+  --moss: #9ca3af;
+  --moss-soft: #24262a;
+
+  --dusk: #94a3b3;
+  --dusk-soft: #1e242a;
+
+  --success: #7fb892;
+  --success-soft: #1c2620;
+  --warning: #d0ac5c;
+  --warning-soft: #262113;
+  /* Kept dark in dark mode so white button text stays readable. */
+  --danger: #e0897f;
+  --danger-soft: #2b1a18;
+  --danger-solid: #a8463c;
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.35), 0 4px 12px rgb(0 0 0 / 0.3);
+  --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.4), 0 12px 28px rgb(0 0 0 / 0.45);
+
+  --ring: #a1a1aa;
+}
+
+/* Expose tokens to Tailwind. `inline` makes the utilities reference the runtime
+   CSS variables above, which is what makes the `.dark` override work. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+  --color-ink-inverse: var(--ink-inverse);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+
+  --color-moss: var(--moss);
+  --color-moss-soft: var(--moss-soft);
+
+  --color-dusk: var(--dusk);
+  --color-dusk-soft: var(--dusk-soft);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-solid: var(--danger-solid);
+
+  --radius-sm: var(--radius-sm);
+  --radius: var(--radius);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --shadow-soft: var(--shadow-soft);
+  --shadow-lift: var(--shadow-lift);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-display: var(--font-fraunces), Georgia, serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Class-based dark mode. Tailwind v4 replaced the old `darkMode` config. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* --- Base element styles --------------------------------------------------- */
+
+* {
+  border-color: var(--line);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background-color: var(--accent-soft);
+  color: var(--ink);
+}
+
+/* A single, consistent focus ring everywhere. Keyboard users must always be
+   able to see where they are — this is a hard accessibility requirement, not
+   a style preference. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Stitch codes, row numbers and any numeric UI use the mono font so columns
+   of digits line up and scannable values stay stable in width. */
+.font-stitch {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-feature-settings: "tnum";
+  letter-spacing: 0.01em;
+}
+
+/* --- Accessibility --------------------------------------------------------- */
+
+/* Respect the OS "reduce motion" setting globally. Individual components may
+   still animate — they just should not fight a stated user preference. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

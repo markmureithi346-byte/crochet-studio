@@ -32,6 +32,34 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# local database (SQLite development)
+prisma/*.db
+prisma/*.db-journal
+prisma/*.db-wal
+prisma/*.db-shm
+
+# user uploads (local storage adapter)
+.storage/
+
+# --- CREDENTIALS AND SCRATCH FILES -----------------------------------------
+# cookies.txt holds a real session cookie for a signed-in user. Committing it
+# would publish a working login token for this machine's database.
+cookies.txt
+*.cookies
+
+# dev server output
+dev.log
+dev.err
+*.log
+
+# build/verification scratch
+*.log
+verify*.txt
+coverage/
+test-results/
+playwright-report/
 
 # vercel
 .vercel

@@ -1,0 +1,329 @@
+// ---------------------------------------------------------------------------
+// Crochet Studio — data model
+//
+// DESIGN RULE #1: rows are DATA, not text.
+// A crochet round is a structured instruction, not a paragraph. Everything
+// downstream (stitch maths, validation, progress tracking, the 3D preview,
+// and eventually the AI assistant) depends on this being structured.
+//
+// DESIGN RULE #2: no giant JSON blobs unless the blob *is* the document.
+// The one exception is PatternVersion, which is intentionally an immutable
+// snapshot of the whole pattern at a point in time.
+//
+// DESIGN RULE #3: provider-portable.
+// SQLite has no native enums, no Json scalar and no Decimal, so we model those
+// as validated strings and integers. That keeps the schema identical when you
+// switch to PostgreSQL (change `provider` + DATABASE_URL and re-run migrate).
+// The authoritative list of allowed values lives in `src/lib/validation`.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// --- Identity ---------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String // never return this from the server to the client
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  patterns Pattern[]
+  projects Project[]
+  yarns    Yarn[]
+  designs  Design[]
+
+  @@index([email])
+}
+
+// --- Pattern authoring ------------------------------------------------------
+
+/// A pattern is a written instruction document: sections -> rounds -> steps.
+/// It is the thing a crocheter actually follows.
+model Pattern {
+  id          String @id @default(cuid())
+  userId      String
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String  @default("")
+
+  // Validated string unions — see src/lib/validation/domain.ts
+  category    String  @default("OTHER") // AMIGURUMI | BLANKET | BAG | HAT | SWEATER | SCARF | HOME_DECOR | OTHER
+  difficulty  String  @default("BEGINNER") // BEGINNER | INTERMEDIATE | ADVANCED
+  visibility  String  @default("PRIVATE") // PRIVATE | UNLISTED | PUBLIC
+
+  // Physical specs
+  hookSizeMm   Float?
+  yarnWeight   String? // LACE | FINGERING | SPORT | DK | WORSTED | ARAN | BULKY | SUPER_BULKY
+  finishedWidthCm  Float?
+  finishedHeightCm Float?
+
+  // Gauge: how many stitches / rows per 10cm. This is what lets us convert
+  // stitch counts into centimetres, and centimetres into stitch counts.
+  gaugeStitches Float?
+  gaugeRows     Float?
+
+  // Denormalised totals, recomputed by the engine on every save.
+  // Why store them: the tracker needs "how many stitches have I done in total?"
+  // on every request. Aggregating 200 rows each time is wasteful. Correctness
+  // still comes from the engine, never from these columns.
+  totalRows      Int @default(0)
+  totalStitches  Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sections  PatternSection[]
+  materials PatternMaterial[]
+  versions  PatternVersion[]
+  design    Design?
+  projects  Project[]
+
+  @@index([userId, updatedAt])
+}
+
+/// Sections group rounds: BODY, ARMS, HEAD, HANDLE...
+model PatternSection {
+  id        String  @id @default(cuid())
+  patternId String
+  pattern   Pattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
+
+  name      String
+  sortOrder Int     @default(0)
+
+  rows PatternRow[]
+
+  @@index([patternId, sortOrder])
+}
+
+/// One row or round: "Round 24 — (SC, INC) x 6".
+model PatternRow {
+  id        String        @id @default(cuid())
+  sectionId String
+  section   PatternSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  label     String // "Round 24" | "Row 12" | "Foundation"
+  sortOrder Int
+
+  // How many stitches this round produces. Always recomputed by the engine.
+  totalStitches Int
+
+  // Optional expectation used for validation and comparison ("should be 18").
+  expectedStitches Int?
+
+  notes String @default("")
+
+  steps       PatternRowStep[]
+  projectRows ProjectRowProgress[]
+
+  @@index([sectionId, sortOrder])
+}
+
+/// A step is either a single stitch run, or a repeat group.
+///   STITCH -> "SC x 6"                     stitchCode="SC", count=6
+///   GROUP  -> "(SC, INC) x 6"              count=6, groupJson='[...]'
+/// Normalising both into one table (instead of a JSON array per row) means we
+/// can query, reorder and diff instructions with plain SQL later.
+model PatternRowStep {
+  id   String     @id @default(cuid())
+  rowId String
+  row   PatternRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
+
+  sortOrder Int
+  type      String // STITCH | GROUP
+
+  stitchCode String? // FK-ish to the stitch catalog in src/lib/crochet/stitches.ts
+  count      Int // times to repeat this step
+
+  /// Only used when type = GROUP. JSON-encoded array of nested steps.
+  /// A stored String (not Json) keeps the schema SQLite/Postgres compatible.
+  groupJson String?
+
+  note String @default("")
+
+  @@index([rowId, sortOrder])
+}
+
+/// "Materials" list: yarn, hook, stuffing, eyes...
+model PatternMaterial {
+  id        String  @id @default(cuid())
+  patternId String
+  pattern   Pattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
+
+  sortOrder Int
+  label     String
+  detail    String  @default("")
+  quantity  String  @default("")
+  yarnId    String?
+  yarn      Yarn?   @relation(fields: [yarnId], references: [id], onDelete: SetNull)
+}
+
+/// Immutable snapshot of a pattern. JSON is correct here: a version IS a frozen
+/// document, so there is nothing to query inside it.
+model PatternVersion {
+  id        String  @id @default(cuid())
+  patternId String
+  pattern   Pattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
+
+  version  Int
+  label    String  @default("")
+  notes    String  @default("")
+  snapshot String // JSON.stringify({ pattern, sections, rows, steps })
+
+  createdAt DateTime @default(now())
+
+  @@unique([patternId, version])
+}
+
+// --- Parametric design (feeds the 3D designer + pattern generator) ---------
+
+/// The parametric spec for an object. Kept separate from Pattern because a
+/// hand-written pattern can have a 3D preview without a formal design, and a
+/// generated design produces a pattern. One-to-one, optional on both sides.
+model Design {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  patternId String? @unique
+  pattern   Pattern? @relation(fields: [patternId], references: [id], onDelete: Cascade)
+
+  name String
+
+  // Shape registry key — see src/lib/design/shapes.ts
+  shape String @default("CYLINDER") // SPHERE | CYLINDER | CONE | TUBE | BOX | PANEL | TORUS
+
+  widthCm  Float @default(20)
+  heightCm Float @default(20)
+  depthCm  Float @default(20)
+
+  stitchCode    String? // dominant stitch, e.g. "SC"
+  colorHex      String  @default("#C2603F")
+
+  /// Extra per-shape knobs (taper %, segments, handle length...) as JSON.
+  params String @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// --- Project tracking -------------------------------------------------------
+
+/// A real-world instance of a pattern being crocheted.
+model Project {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  patternId String?
+  pattern   Pattern? @relation(fields: [patternId], references: [id], onDelete: SetNull)
+
+  name       String
+  status     String  @default("ACTIVE") // ACTIVE | PAUSED | COMPLETED
+  colorHex   String  @default("#C2603F")
+  startedAt  DateTime @default(now())
+  completedAt DateTime?
+  updatedAt  DateTime @updatedAt
+
+  progress  ProjectRowProgress[]
+  sessions  ProjectSession[]
+  notes     ProjectNote[]
+  photos    ProjectPhoto[]
+
+  @@index([userId, status])
+  @@index([userId, updatedAt])
+}
+
+/// Which rounds are done. This *is* the progress tracker: count the rows with a
+/// completedAt value and you know where the crocheter is.
+model ProjectRowProgress {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  rowId    String
+  row      PatternRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
+
+  completedAt DateTime @default(now())
+  stitches    Int      @default(0) // usually the row total, but can differ in reality
+
+  @@unique([projectId, rowId])
+  @@index([projectId])
+}
+
+/// A crochet session — start/stop the timer while you work.
+model ProjectSession {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  seconds   Int       @default(0)
+  note      String    @default("")
+
+  @@index([projectId])
+}
+
+model ProjectNote {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  body      String
+  rowId     String?
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+model ProjectPhoto {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// Path inside the storage adapter (see src/lib/storage). Never a raw
+  /// filesystem path from user input.
+  storageKey String
+  caption    String  @default("")
+  createdAt  DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+// --- Materials --------------------------------------------------------------
+
+/// Yarn you own. Also the library a pattern's materials can point at.
+model Yarn {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  brand         String
+  name          String
+  colorName     String
+  colorHex      String  @default("#C2603F")
+  weight        String  @default("DK") // LACE | FINGERING | SPORT | DK | WORSTED | ARAN | BULKY | SUPER_BULKY
+  metersPerSkein Int?
+  gramsPerSkein Int    @default(100)
+  quantity      Int     @default(1) // skeins in the stash
+  notes         String  @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  materials PatternMaterial[]
+
+  @@index([userId])
+}
